@@ -18,6 +18,14 @@ There are four branches in this repo: `seqkd` branch for running the SeqKD basel
 
 For SeqKD and warmup stage of GAD, the student is supervised-finetuned on the teacher response (corresponding code at [sft_seqkd](https://github.com/YTianZHU/verl/blob/seqkd/verl/workers/actor/dp_actor.py#L485) and [sft_warmup](https://github.com/YTianZHU/verl/blob/warmup/verl/workers/actor/dp_actor.py#L495)). We choose to use this VeRL-based repo to implement them for best alignment.
 
+### Code Guide
+
+We provide a code walk-through of this branch `seqkd`. You can also use other codebases to perform supervised-finetuning on teacher responses.
+
+- [Training Entrance](https://github.com/YTianZHU/verl/blob/seqkd/verl/trainer/ppo/ray_trainer.py#L957)
+- Process on Teacher Data: [Entrance](https://github.com/YTianZHU/verl/blob/seqkd/verl/trainer/ppo/ray_trainer.py#L1035) and [Implementation](https://github.com/YTianZHU/verl/blob/seqkd/verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py#L257)
+- SFT Student on Teacher Response: [Entrance](https://github.com/YTianZHU/verl/blob/seqkd/verl/trainer/ppo/ray_trainer.py#L1083) and [Implementation](https://github.com/YTianZHU/verl/blob/seqkd/verl/workers/actor/dp_actor.py#L523)
+
 
 ## 📄 Citation
 
