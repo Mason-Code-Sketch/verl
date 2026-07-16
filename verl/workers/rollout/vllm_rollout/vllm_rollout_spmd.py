@@ -30,6 +30,7 @@ import logging
 import os
 from contextlib import contextmanager
 from copy import deepcopy
+from inspect import signature
 from typing import Any, Dict, List, Union
 
 import numpy as np
@@ -146,6 +147,14 @@ class vLLMRollout(BaseRollout):
         #    (which can vary across different vLLM versions);
         # - Otherwise it's the desired value we want to explicitly set.
         engine_kwargs = {key: val for key, val in engine_kwargs.items() if val is not None}
+        if "disable_mm_preprocessor_cache" in engine_kwargs:
+            from vllm.engine.arg_utils import EngineArgs
+
+            engine_arg_names = signature(EngineArgs).parameters
+            if "disable_mm_preprocessor_cache" not in engine_arg_names and "mm_processor_cache_gb" in engine_arg_names:
+                disable_mm_preprocessor_cache = engine_kwargs.pop("disable_mm_preprocessor_cache")
+                if disable_mm_preprocessor_cache:
+                    engine_kwargs["mm_processor_cache_gb"] = 0
         if config.get("limit_images", None):  # support for multi-image data
             engine_kwargs["limit_mm_per_prompt"] = {"image": config.get("limit_images")}
         
