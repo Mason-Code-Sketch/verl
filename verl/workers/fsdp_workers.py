@@ -218,7 +218,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             torch_dtype = PrecisionType.to_dtype(torch_dtype)
 
         # override model kwargs
-        actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code, attn_implementation="flash_attention_2")
+        attn_implementation = "flash_attention_2" if use_remove_padding else "sdpa"
+        actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code, attn_implementation=attn_implementation)
 
         # patch for kimi-vl
         if getattr(actor_model_config, "model_type", None) == "kimi_vl":
@@ -921,7 +922,9 @@ class CriticWorker(Worker, DistProfilerExtension):
 
         from transformers import AutoConfig
 
-        critic_model_config = AutoConfig.from_pretrained(local_path, attn_implementation="flash_attention_2", trust_remote_code=config.model.get("trust_remote_code", False))
+        use_remove_padding = config.model.get("use_remove_padding", False)
+        attn_implementation = "flash_attention_2" if use_remove_padding else "sdpa"
+        critic_model_config = AutoConfig.from_pretrained(local_path, attn_implementation=attn_implementation, trust_remote_code=config.model.get("trust_remote_code", False))
         critic_model_config.num_labels = 1
         # patch for kimi-vl
         if getattr(critic_model_config, "model_type", None) == "kimi_vl":
@@ -941,8 +944,6 @@ class CriticWorker(Worker, DistProfilerExtension):
                 critic_model_config,
                 config.model.get("trust_remote_code", False),
             )
-
-            use_remove_padding = config.model.get("use_remove_padding", False)
 
             apply_monkey_patch(
                 model=critic_module,
