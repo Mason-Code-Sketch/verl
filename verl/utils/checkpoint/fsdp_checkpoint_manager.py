@@ -252,10 +252,7 @@ class FSDPCheckpointManager(BaseCheckpointManager):
 
                     auto_model_cls = AutoModelForCausalLM
                 elif "ForConditionalGeneration" in model_config.architectures[0]:
-                    try:
-                        from transformers import AutoModelForImageTextToText
-                    except ImportError:
-                        from transformers import AutoModelForVision2Seq as AutoModelForImageTextToText
+                    from transformers import AutoModelForImageTextToText
 
                     auto_model_cls = AutoModelForImageTextToText
                 else:

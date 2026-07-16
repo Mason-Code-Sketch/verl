@@ -501,12 +501,7 @@ def patch_valuehead_model(model) -> None:
 
 
 def load_valuehead_model(local_path, torch_dtype, model_config, trust_remote_code):
-    from transformers import AutoModelForCausalLM, AutoModelForTokenClassification
-
-    try:
-        from transformers import AutoModelForImageTextToText
-    except ImportError:
-        from transformers import AutoModelForVision2Seq as AutoModelForImageTextToText
+    from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoModelForTokenClassification
 
     attn_implementation = getattr(model_config, "_attn_implementation", None) or "eager"
     try:

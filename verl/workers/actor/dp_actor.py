@@ -20,6 +20,7 @@ Single Process Actor
 import itertools
 import logging
 import os
+from importlib.util import find_spec
 from typing import Tuple
 import numpy as np
 
@@ -39,12 +40,9 @@ from verl.utils.torch_functional import logprobs_from_logits
 from verl.utils.ulysses import gather_outpus_and_unpad, ulysses_pad, ulysses_pad_and_slice_inputs
 from verl.workers.actor import BasePPOActor
 
-_flash_attn_import_error = None
-if is_cuda_available:
-    try:
-        from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
-    except ImportError as exc:
-        _flash_attn_import_error = exc
+_flash_attn_available = find_spec("flash_attn") is not None
+if is_cuda_available and _flash_attn_available:
+    from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
 elif is_npu_available:
     from transformers.integrations.npu_flash_attention import index_first_axis, pad_input, rearrange, unpad_input
 
@@ -63,8 +61,8 @@ class DataParallelPPOActor(BasePPOActor):
         self.actor_optimizer = actor_optimizer
 
         self.use_remove_padding = self.config.get("use_remove_padding", False)
-        if self.use_remove_padding and _flash_attn_import_error is not None:
-            raise RuntimeError("use_remove_padding requires flash-attn on CUDA") from _flash_attn_import_error
+        if self.use_remove_padding and is_cuda_available and not _flash_attn_available:
+            raise RuntimeError("use_remove_padding requires flash-attn on CUDA")
         if torch.distributed.get_rank() == 0:
             print(f"Actor use_remove_padding={self.use_remove_padding}")
         self.use_fused_kernels = self.config.get("use_fused_kernels", False)
