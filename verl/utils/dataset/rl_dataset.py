@@ -249,6 +249,12 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")
             attention_mask = model_inputs.pop("attention_mask")
 
+            # Qwen3.5 only uses this sequence-aligned mask while computing
+            # position_ids. Verl supplies precomputed position_ids below, and
+            # retaining the unpadded mask breaks multimodal batch collation.
+            if self.processor.__class__.__name__ == "Qwen3VLProcessor":
+                model_inputs.pop("mm_token_type_ids", None)
+
             if "second_per_grid_ts" in model_inputs:
                 model_inputs.pop("second_per_grid_ts")
 
