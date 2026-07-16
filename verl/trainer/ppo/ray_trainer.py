@@ -577,6 +577,32 @@ class RayPPOTrainer:
 
         print(f"Dumped generations to {filename}")
 
+    def _dump_rollout_generations(self, inputs, outputs, scores, reward_extra_infos_dict, dump_path):
+        """Dump training rollout samples and scores as JSONL."""
+        os.makedirs(dump_path, exist_ok=True)
+        filename = os.path.join(dump_path, f"{self.global_steps}.jsonl")
+
+        n = len(inputs)
+        base_data = {
+            "input": inputs,
+            "output": outputs,
+            "score": scores,
+            "step": [self.global_steps] * n,
+        }
+        for key, values in reward_extra_infos_dict.items():
+            if len(values) == n:
+                base_data[key] = values
+
+        lines = []
+        for i in range(n):
+            entry = {key: values[i] for key, values in base_data.items()}
+            lines.append(json.dumps(entry, ensure_ascii=False))
+
+        with open(filename, "w") as f:
+            f.write("\n".join(lines) + "\n")
+
+        print(f"Dumped rollout generations to {filename}")
+
     def _maybe_log_val_generations(self, inputs, outputs, scores):
         """Log a table of validation samples to the configured logger (wandb or swanlab)"""
 
@@ -1144,7 +1170,7 @@ class RayPPOTrainer:
                             inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
                             outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
                             scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
-                            self._dump_generations(
+                            self._dump_rollout_generations(
                                 inputs=inputs,
                                 outputs=outputs,
                                 scores=scores,
