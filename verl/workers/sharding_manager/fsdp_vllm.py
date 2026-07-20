@@ -47,6 +47,15 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _get_tensor_model_parallel_process_group():
+    """Return vLLM's tensor-parallel process group across supported APIs."""
+    if hasattr(vllm_ps, "get_tp_group"):
+        return vllm_ps.get_tp_group().device_group
+
+    group = vllm_ps.get_tensor_model_parallel_group()
+    return getattr(group, "device_group", group)
+
+
 class FSDPVLLMShardingManager(BaseShardingManager):
     @check_device_is_available()
     def __init__(self, module: FSDP, inference_engine: LLM, model_config, full_params: bool = False, device_mesh: DeviceMesh = None, offload_param: bool = False, load_format: str = "dummy_hf", layered_summon: bool = True):
@@ -233,15 +242,7 @@ class FSDPVLLMShardingManager(BaseShardingManager):
             return data
 
         # TODO: Current impl doesn't consider FSDP with torch micro-dp
-        if vllm_version in (
-            "0.5.4",
-            "0.6.3",
-        ):
-            group = vllm_ps.get_tensor_model_parallel_group()
-        else:
-            group = vllm_ps.get_tensor_model_parallel_group().device_group
-
-        all_gather_data_proto(data=data, process_group=group)
+        all_gather_data_proto(data=data, process_group=_get_tensor_model_parallel_process_group())
         return data
 
     @GPUMemoryLogger(role="fsdp vllm sharding_manager", logger=logger)

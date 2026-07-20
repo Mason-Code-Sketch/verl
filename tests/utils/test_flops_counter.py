@@ -137,3 +137,22 @@ def test_flops_counter(config_type: str):
         counted_flops, _ = flops_counter.estimate_flops(batch_seqlens, 1)
         print(f"Expect flops for {test_config['config']} is {expected_flops}, but get {counted_flops}")
         assert math.isclose(counted_flops, expected_flops), f"Expect flops for {test_config['config']} is {expected_flops}, but get {counted_flops}"
+
+
+def test_qwen3_5_flops_counter_returns_an_estimate():
+    config = Config(
+        {
+            "model_type": "qwen3_5",
+            "vocab_size": 248320,
+            "hidden_size": 2560,
+            "intermediate_size": 9216,
+            "num_hidden_layers": 32,
+            "num_attention_heads": 16,
+            "num_key_value_heads": 4,
+            "head_dim": 256,
+        }
+    )
+
+    counted_flops, _ = FlopsCounter(config).estimate_flops([1024, 2048], 1)
+
+    assert counted_flops > 0

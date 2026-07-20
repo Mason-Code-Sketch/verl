@@ -57,6 +57,15 @@ Megatron Hybrid Engine:
 """
 
 
+def _get_tensor_model_parallel_process_group():
+    """Return vLLM's tensor-parallel process group across supported APIs."""
+    if hasattr(vllm_ps, "get_tp_group"):
+        return vllm_ps.get_tp_group().device_group
+
+    group = vllm_ps.get_tensor_model_parallel_group()
+    return getattr(group, "device_group", group)
+
+
 class MegatronVLLMShardingManager(BaseShardingManager):
     @check_device_is_available()
     def __init__(
@@ -188,15 +197,7 @@ class MegatronVLLMShardingManager(BaseShardingManager):
             return data
 
         # TODO: Current impl doesn't consider FSDP with torch micro-dp
-        if vllm_version in (
-            "0.5.4",
-            "0.6.3",
-        ):
-            group = vllm_ps.get_tensor_model_parallel_group()
-        else:
-            group = vllm_ps.get_tensor_model_parallel_group().device_group
-
-        all_gather_data_proto(data=data, process_group=group)
+        all_gather_data_proto(data=data, process_group=_get_tensor_model_parallel_process_group())
         return data
 
     @GPUMemoryLogger(role="megatron vllm sharding_manager", logger=logger)

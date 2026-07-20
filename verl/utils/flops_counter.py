@@ -16,7 +16,7 @@ from transformers import PretrainedConfig
 
 from verl.utils.device import get_torch_device
 
-VALID_CONFIG_TYPE = {"llama", "qwen2", "qwen2_vl", "qwen2_5_vl", "qwen3", "qwen3_moe", "deepseek_v3", "minicpmv", "minicpmo"}
+VALID_CONFIG_TYPE = {"llama", "qwen2", "qwen2_vl", "qwen2_5_vl", "qwen3", "qwen3_5", "qwen3_5_text", "qwen3_moe", "deepseek_v3", "minicpmv", "minicpmo"}
 
 
 def get_device_flops(unit="T"):
@@ -49,6 +49,9 @@ def get_device_flops(unit="T"):
         flops = 354e12
     elif "RTX 3070 Ti" in device_name:
         flops = 21.75e12
+    elif "RTX 5090" in device_name:
+        # Peak BF16/FP16 Tensor Core throughput with FP32 accumulation.
+        flops = 419e12
     flops_unit = unit_convert(flops, unit)
     return flops_unit
 
@@ -64,8 +67,17 @@ class FlopsCounter:
     """
 
     def __init__(self, config: PretrainedConfig):
-        if config.model_type not in VALID_CONFIG_TYPE:
-            print(f"Only support config type of {VALID_CONFIG_TYPE}, but got {config.model_type}. MFU will always be zero.")
+        model_type = config.model_type
+        if model_type == "qwen3_5" and hasattr(config, "text_config"):
+            # Qwen3.5 wraps language-model dimensions in text_config.
+            self.config = config.text_config
+        else:
+            self.config = config
+
+        if model_type not in VALID_CONFIG_TYPE:
+            print(f"Only support config type of {VALID_CONFIG_TYPE}, but got {model_type}. MFU will always be zero.")
+        elif model_type in {"qwen3_5", "qwen3_5_text"}:
+            print("Qwen3.5 MFU uses a dense-transformer approximation; linear-attention and Mamba FLOPs are not included.")
 
         self.estimate_func = {
             "qwen2": self._estimate_qwen2_flops,
@@ -73,12 +85,13 @@ class FlopsCounter:
             "qwen2_vl": self._estimate_qwen2_flops,
             "qwen2_5_vl": self._estimate_qwen2_flops,
             "qwen3": self._estimate_qwen2_flops,
+            "qwen3_5": self._estimate_qwen2_flops,
+            "qwen3_5_text": self._estimate_qwen2_flops,
             "qwen3_moe": self._estimate_qwen3_moe_flops,
             "deepseek_v3": self._estimate_deepseek_v3_flops,
             "minicpmv": self._estimate_qwen2_flops,
             "minicpmo": self._estimate_qwen2_flops,
         }
-        self.config = config
 
     def _estimate_unknown_flops(self, tokens_sum, batch_seqlens, delta_time):
         return 0
