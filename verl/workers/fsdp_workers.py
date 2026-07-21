@@ -70,29 +70,6 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 device_name = get_device_name()
-_QWEN3_5_FLA_FALLBACK_APPLIED = False
-
-
-def apply_qwen3_5_fla_fallback(model_config):
-    """Disable the Qwen3.5 FLA kernels when an environment requests the PyTorch fallback."""
-    global _QWEN3_5_FLA_FALLBACK_APPLIED
-
-    if _QWEN3_5_FLA_FALLBACK_APPLIED:
-        return
-    if getattr(model_config, "model_type", None) != "qwen3_5":
-        return
-    if os.getenv("VERL_QWEN3_5_DISABLE_FLA", "False").lower() not in {"1", "true", "yes"}:
-        return
-
-    from transformers.models.qwen3_5 import modeling_qwen3_5
-
-    modeling_qwen3_5.chunk_gated_delta_rule = None
-    modeling_qwen3_5.fused_recurrent_gated_delta_rule = None
-    modeling_qwen3_5.FusedRMSNormGated = None
-    _QWEN3_5_FLA_FALLBACK_APPLIED = True
-    logger.info(
-        "Qwen3.5 FLA kernels disabled by VERL_QWEN3_5_DISABLE_FLA; using the PyTorch linear-attention fallback."
-    )
 
 
 def create_device_mesh(world_size, fsdp_size):
@@ -243,7 +220,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # override model kwargs
         attn_implementation = "flash_attention_2" if use_remove_padding else "sdpa"
         actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code, attn_implementation=attn_implementation)
-        apply_qwen3_5_fla_fallback(actor_model_config)
 
         # patch for kimi-vl
         if getattr(actor_model_config, "model_type", None) == "kimi_vl":
@@ -949,7 +925,6 @@ class CriticWorker(Worker, DistProfilerExtension):
         use_remove_padding = config.model.get("use_remove_padding", False)
         attn_implementation = "flash_attention_2" if use_remove_padding else "sdpa"
         critic_model_config = AutoConfig.from_pretrained(local_path, attn_implementation=attn_implementation, trust_remote_code=config.model.get("trust_remote_code", False))
-        apply_qwen3_5_fla_fallback(critic_model_config)
         critic_model_config.num_labels = 1
         # patch for kimi-vl
         if getattr(critic_model_config, "model_type", None) == "kimi_vl":
