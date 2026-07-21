@@ -113,6 +113,7 @@ class RLHFDataset(Dataset):
         self.num_workers = min(self.num_workers, os.cpu_count())
         self.use_shm = config.get("use_shm", False)
         self.chat_template_func = config.get("chat_template_func", None)
+        self.chat_template_kwargs = dict(config.get("chat_template_kwargs", {}) or {})
         self.need_tools_kwargs = config.get("need_tools_kwargs", False)
         self.filter_prompts = config.get("filter_prompts", True)
         self.serialize_dataset = False
@@ -155,7 +156,12 @@ class RLHFDataset(Dataset):
 
                 def doc2len(doc) -> int:
                     messages = self._build_messages(doc)
-                    raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+                    raw_prompt = self.processor.apply_chat_template(
+                        messages,
+                        add_generation_prompt=True,
+                        tokenize=False,
+                        **self.chat_template_kwargs,
+                    )
                     images = [process_image(image) for image in messages.pop(image_key)] if image_key in messages else None
                     videos = [process_video(video) for video in messages.pop(video_key)] if video_key in messages else None
 
@@ -164,7 +170,12 @@ class RLHFDataset(Dataset):
             else:
 
                 def doc2len(doc) -> int:
-                    return len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True))
+                    prompt_token_ids = tokenizer.apply_chat_template(
+                        doc[prompt_key],
+                        add_generation_prompt=True,
+                        **self.chat_template_kwargs,
+                    )
+                    return len(prompt_token_ids)
 
             self.dataframe = self.dataframe.filter(
                 lambda doc: doc2len(doc) <= self.max_prompt_length,
@@ -231,7 +242,12 @@ class RLHFDataset(Dataset):
 
                 model_inputs, multi_modal_data, raw_prompt = process_minicpmo_data(row_dict, messages, self.tokenizer, self.minicpmo_config, self.image_key, self.max_prompt_length, self.truncation, logger)
             else:
-                raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+                raw_prompt = self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=False,
+                    **self.chat_template_kwargs,
+                )
                 multi_modal_data = {}
 
                 images = None
@@ -265,7 +281,12 @@ class RLHFDataset(Dataset):
                 row_dict["multi_modal_inputs"] = multi_modal_inputs
 
         else:
-            raw_prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+            raw_prompt = self.tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=False,
+                **self.chat_template_kwargs,
+            )
             model_inputs = self.tokenizer(raw_prompt, return_tensors="pt", add_special_tokens=False)
             input_ids = model_inputs.pop("input_ids")
             attention_mask = model_inputs.pop("attention_mask")
