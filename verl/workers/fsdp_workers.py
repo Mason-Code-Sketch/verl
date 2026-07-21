@@ -89,9 +89,8 @@ def apply_qwen3_5_fla_fallback(model_config):
     modeling_qwen3_5.chunk_gated_delta_rule = None
     modeling_qwen3_5.fused_recurrent_gated_delta_rule = None
     modeling_qwen3_5.FusedRMSNormGated = None
-    modeling_qwen3_5.is_fast_path_available = False
     _QWEN3_5_FLA_FALLBACK_APPLIED = True
-    logger.warning(
+    logger.info(
         "Qwen3.5 FLA kernels disabled by VERL_QWEN3_5_DISABLE_FLA; using the PyTorch linear-attention fallback."
     )
 
