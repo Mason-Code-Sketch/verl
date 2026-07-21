@@ -222,7 +222,20 @@ class FSDPCheckpointManager(BaseCheckpointManager):
             if unwrap_model.can_generate() and hasattr(model_config, "name_or_path") and model_config.name_or_path:
                 # Some model's name_or_path is empty if not initialized from pretrained,
                 # in this cases, we don't save generation config.
-                generation_config = GenerationConfig.from_pretrained(model_config.name_or_path)
+                try:
+                    generation_config = GenerationConfig.from_pretrained(model_config.name_or_path)
+                except OSError:
+                    # Some locally stored models omit generation_config.json. The
+                    # model config still contains the generation defaults needed
+                    # to create a portable checkpoint.
+                    generation_config = GenerationConfig.from_model_config(model_config)
+                    log_with_rank(
+                        "generation_config.json is absent from the source model; "
+                        "generated it from config.json for this checkpoint.",
+                        rank=self.rank,
+                        logger=logger,
+                        log_only_rank_0=True,
+                    )
                 generation_config.save_pretrained(local_path)
             else:
                 generation_config = None
