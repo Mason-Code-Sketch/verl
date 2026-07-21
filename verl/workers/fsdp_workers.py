@@ -930,6 +930,33 @@ class CriticWorker(Worker, DistProfilerExtension):
         if getattr(critic_model_config, "model_type", None) == "kimi_vl":
             critic_model_config.text_config.topk_method = "greedy"
 
+        if config.model.get("use_liger", False):
+            if getattr(critic_model_config, "model_type", None) != "qwen3_5":
+                raise NotImplementedError(
+                    "critic.model.use_liger currently supports Qwen3.5 critics only; "
+                    f"got model_type={getattr(critic_model_config, 'model_type', None)!r}"
+                )
+
+            try:
+                from liger_kernel.transformers import apply_liger_kernel_to_qwen3_5
+            except ImportError as exc:
+                raise ImportError(
+                    "critic.model.use_liger=True requires liger-kernel. "
+                    "Install it with: pip install liger-kernel"
+                ) from exc
+
+            # The critic is a token-classification value head, so it has no
+            # language-model cross-entropy loss to fuse. Apply Liger before
+            # loading so its RMSNorm and SwiGLU modules are constructed in the
+            # Qwen3.5 critic.
+            apply_liger_kernel_to_qwen3_5(
+                fused_linear_cross_entropy=False,
+                rms_norm=True,
+                swiglu=True,
+            )
+            if self.rank == 0:
+                print("Using Liger RMSNorm and SwiGLU kernels for the Qwen3.5 critic")
+
         init_context = get_init_weight_context_manager(use_meta_tensor=not critic_model_config.tie_word_embeddings, mesh=self.device_mesh)
 
         with init_context(), warnings.catch_warnings():
