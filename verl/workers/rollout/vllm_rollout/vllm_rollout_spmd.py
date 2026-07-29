@@ -43,6 +43,8 @@ from vllm.distributed import parallel_state as vllm_ps
 from vllm.lora.request import LoRARequest
 from vllm.v1.worker.worker_base import WorkerWrapperBase
 
+logging.getLogger("vllm.utils.jit_monitor").setLevel(os.getenv("VLLM_JIT_MONITOR_LOGGING_LEVEL", "WARNING"))
+
 from verl import DataProto
 from verl.third_party.vllm import vllm_version
 from verl.utils.debug import GPUMemoryLogger
