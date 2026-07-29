@@ -31,6 +31,7 @@ from verl.utils.device import get_device_id, get_device_name, is_cuda_available,
 from verl.utils.fsdp_utils import FSDPModule, fsdp2_clip_grad_norm_
 from verl.utils.py_functional import append_to_dict
 from verl.utils.seqlen_balancing import get_reverse_idx, rearrange_micro_batches
+from verl.utils.torch_functional import masked_mean, masked_sum
 from verl.utils.ulysses import gather_outpus_and_unpad, ulysses_pad_and_slice_inputs
 from verl.workers.critic import BasePPOCritic
 
@@ -300,51 +301,31 @@ class DataParallelPPOCritic(BasePPOCritic):
                     response_mask = attention_mask[:, -response_length:]
                     teacher_response_mask = teacher_attention_mask[:, -teacher_response_length:]
 
-                    # Keep only one long-sequence autograd graph at a time. The
-                    # no-grad teacher pass supplies the detached sigmoid factor
-                    # for the student backward; teacher is then recomputed for
-                    # its own backward below.
                     student_vpreds = self._forward_micro_batch(data, compute_teacher=False)
-                    with torch.no_grad():
-                        teacher_vpreds_for_weight = self._forward_micro_batch(data, compute_teacher=True)
-
-                    student_reward, teacher_reward_for_weight = core_algos.compute_discriminator_rewards(
-                        student_vpreds=student_vpreds,
-                        teacher_vpreds=teacher_vpreds_for_weight,
-                        response_mask=response_mask,
-                        teacher_response_mask=teacher_response_mask,
-                    )
-                    d_loss, student_backward_loss, _, gradient_weight = core_algos.compute_discriminator_backward_losses(
-                        student_reward=student_reward,
-                        teacher_reward=teacher_reward_for_weight,
-                    )
-                    d_acc = (teacher_reward_for_weight > student_reward).float().mean().detach().item()
-                    student_value_mean = student_reward.mean().detach().item()
-                    teacher_value_mean = teacher_reward_for_weight.mean().detach().item()
-
-                    if self.config.use_dynamic_bsz:
-                        # relative to the dynamic bsz
-                        loss_scale = len(data) / self.config.ppo_mini_batch_size
-                    else:
-                        loss_scale = 1 / self.gradient_accumulation
-
-                    (student_backward_loss * loss_scale).backward()
-
                     teacher_vpreds = self._forward_micro_batch(data, compute_teacher=True)
-                    _, teacher_reward = core_algos.compute_discriminator_rewards(
-                        student_vpreds=student_vpreds.detach(),
+                    d_acc = (teacher_vpreds.sum(dim=-1) > student_vpreds.sum(dim=-1)).float().mean().detach().item()
+
+                    # assert not torch.any(torch.isnan(vpreds)).item()
+
+                    d_loss = core_algos.compute_discriminator_loss(
+                        student_vpreds=student_vpreds,
                         teacher_vpreds=teacher_vpreds,
                         response_mask=response_mask,
                         teacher_response_mask=teacher_response_mask,
                     )
-                    teacher_backward_loss = (-gradient_weight * teacher_reward).mean()
-                    (teacher_backward_loss * loss_scale).backward()
+                    if self.config.use_dynamic_bsz:
+                        # relative to the dynamic bsz
+                        loss = d_loss * (len(data) / self.config.ppo_mini_batch_size)
+                    else:
+                        loss = d_loss / self.gradient_accumulation
+
+                    loss.backward()
 
                     data = {
                         "critic/d_loss": d_loss.detach().item(),
                         "critic/d_acc": d_acc,
-                        "critic/student_value_mean": student_value_mean,
-                        "critic/teacher_value_mean": teacher_value_mean,
+                        "critic/student_value_mean": masked_sum(student_vpreds, response_mask, axis=-1).mean().detach().item(),
+                        "critic/teacher_value_mean": masked_sum(teacher_vpreds, teacher_response_mask, axis=-1).mean().detach().item(),
                     }
 
                     append_to_dict(metrics, data)
