@@ -847,11 +847,47 @@ def compute_value_loss(vpreds: torch.Tensor, returns: torch.Tensor, values: torc
     return vf_loss, vf_clipfrac
 
 
-def compute_discriminator_loss(student_vpreds: torch.Tensor, teacher_vpreds: torch.Tensor, response_mask: torch.Tensor, teacher_response_mask: torch.Tensor):
+def compute_discriminator_rewards(
+    student_vpreds: torch.Tensor,
+    teacher_vpreds: torch.Tensor,
+    response_mask: torch.Tensor,
+    teacher_response_mask: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     teacher_reward = torch.sum(teacher_vpreds * teacher_response_mask, dim=-1)
     student_reward = torch.sum(student_vpreds * response_mask, dim=-1)
-    d_loss = -nn.functional.logsigmoid(teacher_reward - student_reward).mean()
-    return d_loss
+    return student_reward, teacher_reward
+
+
+def compute_discriminator_loss(
+    student_vpreds: torch.Tensor,
+    teacher_vpreds: torch.Tensor,
+    response_mask: torch.Tensor,
+    teacher_response_mask: torch.Tensor,
+):
+    student_reward, teacher_reward = compute_discriminator_rewards(
+        student_vpreds=student_vpreds,
+        teacher_vpreds=teacher_vpreds,
+        response_mask=response_mask,
+        teacher_response_mask=teacher_response_mask,
+    )
+    return -nn.functional.logsigmoid(teacher_reward - student_reward).mean()
+
+
+def compute_discriminator_backward_losses(
+    student_reward: torch.Tensor,
+    teacher_reward: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return the discriminator loss and its student and teacher gradient terms.
+
+    The sum of the gradients of the returned backward losses equals the gradient
+    of ``-logsigmoid(teacher_reward - student_reward).mean()``. Detaching the
+    sigmoid factor is required so each term contributes only its own gradient.
+    """
+    discriminator_loss = -nn.functional.logsigmoid(teacher_reward - student_reward).mean()
+    gradient_weight = torch.sigmoid(student_reward - teacher_reward).detach()
+    student_backward_loss = (gradient_weight * student_reward).mean()
+    teacher_backward_loss = (-gradient_weight * teacher_reward).mean()
+    return discriminator_loss, student_backward_loss, teacher_backward_loss, gradient_weight
 
 
 def kl_penalty(logprob: torch.FloatTensor, ref_logprob: torch.FloatTensor, kl_penalty) -> torch.FloatTensor:

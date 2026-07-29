@@ -15,6 +15,7 @@
 import unittest
 
 import pytest
+import torch
 
 import verl.trainer.ppo.core_algos
 from verl.trainer.ppo.core_algos import get_adv_estimator_fn, register_adv_est
@@ -127,6 +128,48 @@ class TestRegisterAdvEst(unittest.TestCase):
         """Test that name lookup is case-sensitive."""
         with pytest.raises(ValueError):
             get_adv_estimator_fn("GAE")  # Different case
+
+
+def test_discriminator_split_backward_matches_original_loss():
+    from verl.trainer.ppo.core_algos import compute_discriminator_backward_losses, compute_discriminator_loss
+
+    torch.manual_seed(0)
+    student_inputs = torch.randn(3, 5, 4, dtype=torch.float64)
+    teacher_inputs = torch.randn(3, 5, 4, dtype=torch.float64)
+    response_mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0], [1, 1, 1, 1, 0]], dtype=torch.float64)
+    teacher_response_mask = torch.tensor([[1, 1, 1, 1, 0], [1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], dtype=torch.float64)
+    loss_scale = 0.375
+
+    original_parameter = torch.nn.Parameter(torch.randn(4, dtype=torch.float64))
+    original_student_vpreds = student_inputs @ original_parameter
+    original_teacher_vpreds = teacher_inputs @ original_parameter
+    original_loss = compute_discriminator_loss(
+        student_vpreds=original_student_vpreds,
+        teacher_vpreds=original_teacher_vpreds,
+        response_mask=response_mask,
+        teacher_response_mask=teacher_response_mask,
+    )
+    (original_loss * loss_scale).backward()
+
+    split_parameter = torch.nn.Parameter(original_parameter.detach().clone())
+    split_student_vpreds = student_inputs @ split_parameter
+    with torch.no_grad():
+        split_teacher_vpreds_for_weight = teacher_inputs @ split_parameter
+    split_student_reward = torch.sum(split_student_vpreds * response_mask, dim=-1)
+    split_teacher_reward_for_weight = torch.sum(split_teacher_vpreds_for_weight * teacher_response_mask, dim=-1)
+    split_loss, split_student_backward_loss, _, gradient_weight = compute_discriminator_backward_losses(
+        student_reward=split_student_reward,
+        teacher_reward=split_teacher_reward_for_weight,
+    )
+    (split_student_backward_loss * loss_scale).backward()
+
+    split_teacher_vpreds = teacher_inputs @ split_parameter
+    split_teacher_reward = torch.sum(split_teacher_vpreds * teacher_response_mask, dim=-1)
+    split_teacher_backward_loss = (-gradient_weight * split_teacher_reward).mean()
+    (split_teacher_backward_loss * loss_scale).backward()
+
+    torch.testing.assert_close(split_loss, original_loss)
+    torch.testing.assert_close(split_parameter.grad, original_parameter.grad)
 
 
 if __name__ == "__main__":
